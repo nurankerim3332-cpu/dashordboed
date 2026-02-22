@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Sales Dashboard</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,400&display=swap');
+
+  :root {
+    --bg:       #080810;
+    --surface:  #10101a;
+    --card:     #161620;
+    --border:   #26263a;
+    --accent:   #7c6fff;
+    --text:     #e6e6f0;
+    --muted:    #60607a;
+    --green:    #3fdb7a;
+    --red:      #ff5c6a;
+    --gold:     #ffd060;
+    --silver:   #b8c0cc;
+    --bronze:   #c87840;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+
+  body {
+    font-family:'DM Sans',sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    min-height:100vh;
+    overflow-x:hidden;
+  }
+
+  /* ─ NAV ─ */
+  .nav {
+    position:fixed; bottom:0; left:0; right:0; z-index:100;
+    background:rgba(16,16,26,.97);
+    backdrop-filter:blur(24px);
+    border-top:1px solid var(--border);
+    display:flex;
+    padding:8px 0 max(8px,env(safe-area-inset-bottom));
+  }
+  .nav-btn {
+    flex:1; display:flex; flex-direction:column; align-items:center; gap:3px;
+    background:none; border:none; color:var(--muted); cursor:pointer;
+    font-family:'DM Sans',sans-serif; font-size:10px; letter-spacing:.02em;
+    padding:4px 0; transition:color .18s;
+  }
+  .nav-btn.active { color:var(--accent); }
+  .nav-btn svg { width:21px; height:21px; }
+
+  /* ─ PAGES ─ */
+  .page { display:none; padding:18px 16px 88px; animation:up .25s ease; }
+  .page.active { display:block; }
+  @keyframes up { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
+
+  /* ─ HEADER ─ */
+  .hd { margin-bottom:22px; }
+  .hd h1 { font-family:'Unbounded',sans-serif; font-size:21px; font-weight:800; line-height:1.2; }
+  .hd p  { color:var(--muted); font-size:12px; margin-top:5px; }
+
+  /* ─ CARD ─ */
+  .card {
+    background:var(--card); border:1px solid var(--border); border-radius:18px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card-title {
+    font-family:'Unbounded',sans-serif; font-size:10px; font-weight:600;
+    letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-bottom:14px;
+  }
+
+  /* ─ STAT CARD ─ */
+  /* Full-width single stat card per employee showing % */
+  .emp-stat {
+    background:var(--card); border:1px solid var(--border); border-radius:16px;
+    padding:14px 16px; margin-bottom:10px; display:flex; align-items:center; gap:14px;
+  }
+  .emp-avatar {
+    width:44px; height:44px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Unbounded',sans-serif; font-size:13px; font-weight:700;
+  }
+  .emp-body { flex:1; min-width:0; }
+  .emp-name { font-weight:500; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .emp-row  { display:flex; align-items:baseline; gap:8px; margin-top:5px; flex-wrap:wrap; }
+  .emp-earned { font-family:'Unbounded',sans-serif; font-size:16px; font-weight:800; }
+  .emp-salary { font-size:11px; color:var(--muted); }
+
+  /* THE PERCENTAGE BADGE */
+  .pct-badge {
+    display:inline-flex; align-items:center; justify-content:center;
+    font-family:'Unbounded',sans-serif; font-size:15px; font-weight:800;
+    padding:6px 14px; border-radius:40px; white-space:nowrap; flex-shrink:0;
+  }
+  .pct-plus  { background:rgba(63,219,122,.14); color:var(--green); border:1px solid rgba(63,219,122,.3); }
+  .pct-minus { background:rgba(255,92,106,.12); color:var(--red);   border:1px solid rgba(255,92,106,.25); }
+  .pct-zero  { background:rgba(124,111,255,.12); color:var(--accent); border:1px solid rgba(124,111,255,.25); }
+
+  /* thin progress bar under name */
+  .emp-bar-wrap { height:3px; background:var(--border); border-radius:3px; margin-top:8px; overflow:hidden; }
+  .emp-bar-fill { height:100%; border-radius:3px; transition:width .7s cubic-bezier(.4,0,.2,1); }
+  .emp-bar-fill.plus  { background:var(--green); }
+  .emp-bar-fill.minus { background:var(--red); }
+
+  /* ─ CHART ─ */
+  .chart-wrap { height:210px; position:relative; }
+
+  /* ─ DATE ROW ─ */
+  .date-row { display:flex; gap:8px; margin-bottom:12px; }
+  .date-input {
+    flex:1; background:var(--card); border:1px solid var(--border); border-radius:11px;
+    color:var(--text); font-family:'DM Sans',sans-serif; font-size:13px; padding:9px 12px;
+  }
+  .date-input:focus { outline:none; border-color:var(--accent); }
+  .go-btn {
+    background:var(--accent); border:none; border-radius:11px; color:#fff;
+    padding:9px 16px; font-family:'DM Sans',sans-serif; font-size:13px;
+    cursor:pointer; transition:opacity .15s; white-space:nowrap;
+  }
+  .go-btn:active { opacity:.75; }
+
+  /* ─ LEADERBOARD ─ */
+  .lb-item {
+    display:flex; align-items:center; gap:12px; padding:12px;
+    border-radius:13px; margin-bottom:8px;
+    background:var(--surface); border:1px solid var(--border);
+  }
+  .lb-rank { font-family:'Unbounded',sans-serif; font-size:13px; font-weight:800; width:26px; text-align:center; flex-shrink:0; }
+  .rank-1 { color:var(--gold); }
+  .rank-2 { color:var(--silver); }
+  .rank-3 { color:var(--bronze); }
+  .rank-n { color:var(--muted); }
+  .lb-av {
+    width:38px; height:38px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Unbounded',sans-serif; font-size:12px; font-weight:700;
+    background:linear-gradient(135deg,var(--accent),#ff6584);
+  }
+  .lb-info { flex:1; min-width:0; }
+  .lb-name { font-size:14px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lb-sub  { font-size:11px; color:var(--muted); margin-top:2px; }
+  .lb-val  { font-family:'Unbounded',sans-serif; font-size:13px; font-weight:800; color:var(--green); text-align:right; flex-shrink:0; }
+
+  /* ─ FORM ─ */
+  .fg { margin-bottom:14px; }
+  .fl { font-size:12px; color:var(--muted); margin-bottom:6px; display:block; }
+  .fi, .fs {
+    width:100%; background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; color:var(--text); padding:12px 14px;
+    font-family:'DM Sans',sans-serif; font-size:14px; transition:border-color .2s;
+  }
+  .fi:focus, .fs:focus { outline:none; border-color:var(--accent); }
+  .fs option { background:var(--card); }
+  .fi-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+
+  /* formula preview box */
+  .formula-preview {
+    background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    padding:13px 14px; margin-bottom:14px; font-size:12px; color:var(--muted); line-height:1.7;
+  }
+  .formula-preview .result { font-family:'Unbounded',sans-serif; font-size:18px; font-weight:800; margin-top:8px; }
+
+  .btn-submit {
+    width:100%; background:linear-gradient(135deg,var(--accent),#9c6dff);
+    border:none; border-radius:14px; color:#fff; padding:16px;
+    font-family:'Unbounded',sans-serif; font-size:12px; font-weight:700;
+    cursor:pointer; letter-spacing:.06em; transition:opacity .15s,transform .12s;
+  }
+  .btn-submit:active { opacity:.82; transform:scale(.98); }
+  .btn-submit:disabled { opacity:.45; cursor:not-allowed; }
+
+  /* ─ MISC ─ */
+  .toast {
+    position:fixed; bottom:78px; left:50%; transform:translateX(-50%) translateY(14px);
+    background:#1c1c28; border:1px solid var(--border); border-radius:12px;
+    padding:11px 20px; font-size:13px; opacity:0; transition:all .28s; z-index:200; white-space:nowrap;
+  }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  .toast.ok  { border-color:var(--green); color:var(--green); }
+  .toast.err { border-color:var(--red);   color:var(--red);   }
+
+  .loader { display:flex; align-items:center; justify-content:center; height:100px; color:var(--muted); font-size:13px; gap:8px; }
+  .spin { width:17px; height:17px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:rot .75s linear infinite; }
+  @keyframes rot { to{transform:rotate(360deg)} }
+  .empty { text-align:center; padding:36px 20px; color:var(--muted); font-size:13px; }
+
+  /* summary row on dashboard */
+  .sum-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
+  .sum-card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px; }
+  .sum-val   { font-family:'Unbounded',sans-serif; font-size:18px; font-weight:800; }
+  .sum-label { font-size:11px; color:var(--muted); margin-top:4px; }
+</style>
+</head>
+<body>
+
+<!-- ═══ DASHBOARD ═══ -->
+<div id="page-dashboard" class="page active">
+  <div class="hd">
+    <h1>📊 Dashboard</h1>
+    <p id="hd-date">—</p>
+  </div>
+
+  <!-- Итоги дня -->
+  <div class="sum-row">
+    <div class="sum-card">
+      <div class="sum-val" id="s-today">—</div>
+      <div class="sum-label">Выручка сегодня</div>
+    </div>
+    <div class="sum-card">
+      <div class="sum-val" id="s-month">—</div>
+      <div class="sum-label">За месяц</div>
+    </div>
+  </div>
+
+  <!-- Выбор даты для карточек -->
+  <div class="date-row">
+    <input type="date" class="date-input" id="dash-date" />
+    <button class="go-btn" onclick="renderDashCards()">▶ Показать</button>
+  </div>
+
+  <!-- Карточки сотрудников с % -->
+  <div id="emp-cards">
+    <div class="loader"><div class="spin"></div> Загрузка...</div>
+  </div>
+
+  <!-- Диаграмма -->
+  <div class="card" style="margin-top:4px">
+    <div class="card-title">Диаграмма за день</div>
+    <div class="chart-wrap"><canvas id="dayChart"></canvas></div>
+  </div>
+</div>
+
+<!-- ═══ LEADERBOARD ═══ -->
+<div id="page-leaderboard" class="page">
+  <div class="hd">
+    <h1>🏆 Лидеры</h1>
+    <p>Топ за последние 30 дней</p>
+  </div>
+  <div id="lb-list"><div class="loader"><div class="spin"></div> Загрузка...</div></div>
+</div>
+
+<!-- ═══ ADD SALE ═══ -->
+<div id="page-add" class="page">
+  <div class="hd">
+    <h1>➕ Добавить</h1>
+    <p>Внести продажу в таблицу</p>
+  </div>
+
+  <div class="card">
+    <div class="fg">
+      <label class="fl">Сотрудник</label>
+      <select class="fs" id="emp-sel" onchange="calcPreview()">
+        <option value="">— Выберите сотрудника —</option>
+      </select>
+    </div>
+
+    <div class="fi-row">
+      <div class="fg">
+        <label class="fl">Сумма продажи</label>
+        <input type="number" class="fi" id="f-amount" placeholder="50 000" min="0" oninput="calcPreview()" />
+      </div>
+      <div class="fg">
+        <label class="fl">Оклад за день</label>
+        <input type="number" class="fi" id="f-salary" placeholder="30 000" min="0" oninput="calcPreview()" />
+      </div>
+    </div>
+
+    <div class="fg">
+      <label class="fl">Дата</label>
+      <input type="date" class="fi" id="f-date" />
+    </div>
+
+    <div class="fg">
+      <label class="fl">Комментарий (необязательно)</label>
+      <input type="text" class="fi" id="f-comment" placeholder="Клиент, услуга..." />
+    </div>
+
+    <!-- Предпросмотр формулы -->
+    <div class="formula-preview" id="formula-box">
+      <span style="opacity:.6">Заполните сумму и оклад — покажем результат формулы</span>
+    </div>
+
+    <button class="btn-submit" id="btn-sub" onclick="submitSale()">ДОБАВИТЬ ПРОДАЖУ</button>
+  </div>
+</div>
+
+<!-- NAV -->
+<nav class="nav">
+  <button class="nav-btn active" onclick="switchPage('dashboard',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+      <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+    </svg>
+    Главная
+  </button>
+  <button class="nav-btn" onclick="switchPage('leaderboard',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+    </svg>
+    Лидеры
+  </button>
+  <button class="nav-btn" onclick="switchPage('add',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+    </svg>
+    Добавить
+  </button>
+</nav>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ╔══════════════════════════════════════╗
+// ║  ⚙️  КОНФИГУРАЦИЯ                     ║
+// ╚══════════════════════════════════════╝
+const CONFIG = {
+  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycby_3lPcnFsCzEYo8FKq9CGctVxMr9-5r_yki-25sFYSHpA5BEr2kzDC6h1gEvn9pgAlPg/exec',
+  SHEET_ID:        '1Yok6bv-VyNRZh8o-q2uEbFqupdULZz04kavOY8eYyiA',
+  SHEET_NAME:      'Sales',
+  EMPLOYEES_SHEET: 'Employees',
+  API_KEY:         'AIzaSyDl76JFeNHkKcZFW92BxuicnqGS_d9I-vg'
+};
+// ──────────────────────────────────────────
+
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+
+let salesData = [];  // [{date,employee,amount,salary,comment}]
+let employees = [];  // ['Иван','Мария',...]
+let chartInst = null;
+
+// Цвета аватарок
+const AV_COLORS = [
+  ['#7c6fff','#ff6584'],['#3fdb7a','#00b4d8'],['#ff6584','#ffd060'],
+  ['#f472b6','#a78bfa'],['#34d399','#60a5fa'],['#fb923c','#fbbf24']
+];
+
+// ── INIT ──────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', async () => {
+  const today = new Date();
+  document.getElementById('hd-date').textContent  = formatDateRu(today);
+  document.getElementById('dash-date').value       = toISO(today);
+  document.getElementById('f-date').value           = toISO(today);
+  await loadAll();
+});
+
+// ── DATA ──────────────────────────────────────────────────
+async function loadAll() {
+  try {
+    await Promise.all([loadEmployees(), loadSales()]);
+    updateSummary();
+    renderDashCards();
+  } catch(e) {
+    toast('Ошибка загрузки: ' + e.message, 'err');
+    console.error(e);
+  }
+}
+
+async function loadEmployees() {
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}/values/${CONFIG.EMPLOYEES_SHEET}!A2:A100?key=${CONFIG.API_KEY}`;
+  const res = await fetch(url);
+  const d = await res.json();
+  if (d.error) throw new Error(d.error.message || 'Ошибка загрузки сотрудников');
+  employees = (d.values || []).flat().map(s => String(s).trim()).filter(Boolean);
+  const sel = document.getElementById('emp-sel');
+  sel.innerHTML = '<option value="">— Выберите сотрудника —</option>';
+  employees.forEach(n => {
+    const o = document.createElement('option');
+    o.value = n; o.textContent = n; sel.appendChild(o);
+  });
+}
+
+async function loadSales() {
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}/values/${CONFIG.SHEET_NAME}!A2:E5000?key=${CONFIG.API_KEY}`;
+  const res = await fetch(url);
+  const d = await res.json();
+  if (d.error) throw new Error(d.error.message || 'Ошибка загрузки продаж');
+  salesData = (d.values || []).map(r => ({
+    date:     (r[0] || '').trim(),
+    employee: (r[1] || '').trim(),
+    amount:   parseFloat(r[2]) || 0,
+    salary:   parseFloat(r[3]) || 0,
+    comment:  r[4] || ''
+  })).filter(r => r.date && r.employee);
+}
+
+// ── ФОРМУЛА ───────────────────────────────────────────────
+// (заработал / оклад_за_день * 100) - 100 = %
+function calcPerf(earned, salary) {
+  if (!salary) return null;
+  return (earned / salary * 100) - 100;
+}
+function fmtPct(pct) {
+  if (pct === null) return null;
+  return (pct > 0 ? '+' : '') + pct.toFixed(1) + '%';
+}
+function pctClass(pct) {
+  if (pct === null) return 'zero';
+  return pct > 0 ? 'plus' : pct < 0 ? 'minus' : 'zero';
+}
+
+// ── SUMMARY (итоги сегодня/месяц) ─────────────────────────
+function updateSummary() {
+  const tStr = toISO(new Date());
+  const mStr = tStr.slice(0,7);
+  const todayAmt  = salesData.filter(r => normDate(r.date) === tStr).reduce((s,r) => s+r.amount, 0);
+  const monthAmt  = salesData.filter(r => normDate(r.date).startsWith(mStr)).reduce((s,r) => s+r.amount, 0);
+  document.getElementById('s-today').textContent = fmtMoney(todayAmt);
+  document.getElementById('s-month').textContent  = fmtMoney(monthAmt);
+}
+
+// ── DASHBOARD CARDS ───────────────────────────────────────
+function renderDashCards() {
+  const date = document.getElementById('dash-date').value;
+  if (!date) return;
+
+  const daySales = salesData.filter(r => normDate(r.date) === date);
+
+  // Агрегируем по сотруднику
+  // Для оклада берём ПОСЛЕДНЕЕ введённое значение за этот день (или среднее)
+  const byEmp = {};
+  daySales.forEach(r => {
+    if (!byEmp[r.employee]) byEmp[r.employee] = { earned: 0, salary: 0, count: 0 };
+    byEmp[r.employee].earned += r.amount;
+    if (r.salary > 0) byEmp[r.employee].salary = r.salary; // берём любое ненулевое
+    byEmp[r.employee].count++;
+  });
+
+  const container = document.getElementById('emp-cards');
+
+  if (Object.keys(byEmp).length === 0) {
+    container.innerHTML = '<div class="empty">Нет данных за выбранный день</div>';
+    drawChart({});
+    return;
+  }
+
+  // Сортируем по заработанному
+  const sorted = Object.entries(byEmp).sort((a,b) => b[1].earned - a[1].earned);
+  const maxEarned = sorted[0][1].earned || 1;
+
+  container.innerHTML = sorted.map(([name, d], i) => {
+    const pct   = calcPerf(d.earned, d.salary);
+    const cls   = pctClass(pct);
+    const label = pct !== null ? fmtPct(pct) : '—';
+    const avColors = AV_COLORS[i % AV_COLORS.length];
+    const initials = name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    const barW  = Math.round(d.earned / maxEarned * 100);
+    const salaryStr = d.salary > 0 ? `оклад ${fmtMoney(d.salary)}` : 'оклад не указан';
+
+    return `
+    <div class="emp-stat">
+      <div class="emp-avatar" style="background:linear-gradient(135deg,${avColors[0]},${avColors[1]})">${initials}</div>
+      <div class="emp-body">
+        <div class="emp-name">${esc(name)}</div>
+        <div class="emp-row">
+          <span class="emp-earned">${fmtMoney(d.earned)}</span>
+          <span class="emp-salary">${salaryStr}</span>
+        </div>
+        <div class="emp-bar-wrap">
+          <div class="emp-bar-fill ${cls === 'minus' ? 'minus' : 'plus'}" style="width:${barW}%"></div>
+        </div>
+      </div>
+      <div class="pct-badge pct-${cls}">${label}</div>
+    </div>`;
+  }).join('');
+
+  // Обновляем диаграмму
+  drawChart(byEmp);
+}
+
+// ── ДИАГРАММА (суммы за день) ──────────────────────────────
+function drawChart(byEmp) {
+  if (chartInst) { chartInst.destroy(); chartInst = null; }
+
+  const labels = Object.keys(byEmp);
+  const values = labels.map(n => byEmp[n].earned);
+  const COLORS = ['#7c6fff','#ff6584','#3fdb7a','#ffd060','#60a5fa','#f472b6','#fb923c','#34d399'];
+
+  const ctx = document.getElementById('dayChart').getContext('2d');
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+  if (!labels.length) {
+    ctx.fillStyle = '#60607a'; ctx.font = '13px DM Sans'; ctx.textAlign = 'center';
+    ctx.fillText('Нет данных', ctx.canvas.width/2, 105);
+    return;
+  }
+
+  chartInst = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: labels.map((_,i) => COLORS[i%COLORS.length] + '99'),
+        borderColor:     labels.map((_,i) => COLORS[i%COLORS.length]),
+        borderWidth: 2, borderRadius: 9
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => ' ' + fmtMoney(c.raw) } }
+      },
+      scales: {
+        x: { ticks: { color:'#60607a', font:{size:10} }, grid: { color:'#26263a' } },
+        y: { ticks: { color:'#60607a', font:{size:10}, callback: v => fmtMoney(v) }, grid: { color:'#26263a' } }
+      }
+    }
+  });
+}
+
+// ── LEADERBOARD ───────────────────────────────────────────
+function renderLeaderboard() {
+  const ago = new Date(); ago.setDate(ago.getDate() - 30);
+  const fromStr = toISO(ago);
+
+  const map = {};
+  salesData.filter(r => normDate(r.date) >= fromStr).forEach(r => {
+    if (!map[r.employee]) map[r.employee] = { earned:0, count:0 };
+    map[r.employee].earned += r.amount;
+    map[r.employee].count++;
+  });
+
+  const sorted = Object.entries(map).sort((a,b) => b[1].earned - a[1].earned);
+  const medals = ['rank-1','rank-2','rank-3'];
+  const mSym   = ['🥇','🥈','🥉'];
+  const cont   = document.getElementById('lb-list');
+
+  if (!sorted.length) { cont.innerHTML = '<div class="empty">Нет данных за 30 дней</div>'; return; }
+
+  cont.innerHTML = sorted.map(([name, d], i) => {
+    const rc  = i < 3 ? medals[i] : 'rank-n';
+    const sym = i < 3 ? mSym[i] : `#${i+1}`;
+    const ini = name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    return `
+    <div class="lb-item">
+      <div class="lb-rank ${rc}">${sym}</div>
+      <div class="lb-av">${ini}</div>
+      <div class="lb-info">
+        <div class="lb-name">${esc(name)}</div>
+        <div class="lb-sub">${d.count} сделок</div>
+      </div>
+      <div class="lb-val">${fmtMoney(d.earned)}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── ПРЕДПРОСМОТР ФОРМУЛЫ в форме ──────────────────────────
+function calcPreview() {
+  const amount = parseFloat(document.getElementById('f-amount').value) || 0;
+  const salary = parseFloat(document.getElementById('f-salary').value) || 0;
+  const box    = document.getElementById('formula-box');
+
+  if (!amount && !salary) {
+    box.innerHTML = '<span style="opacity:.5">Заполните сумму и оклад — покажем результат формулы</span>';
+    return;
+  }
+
+  const pct = salary > 0 ? calcPerf(amount, salary) : null;
+  const cls = pctClass(pct);
+  const clrMap = { plus: 'var(--green)', minus: 'var(--red)', zero: 'var(--accent)' };
+  const clr = clrMap[cls];
+  const pLabel = pct !== null ? fmtPct(pct) : '—';
+
+  box.innerHTML = `
+    <span style="opacity:.6;font-size:11px">
+      (${fmtMoney(amount)} ÷ ${salary > 0 ? fmtMoney(salary) : '?'} × 100) − 100 =
+    </span>
+    <div class="result" style="color:${clr}">${pLabel}</div>
+    ${pct !== null
+      ? `<span style="font-size:11px;opacity:.5">${pct > 0 ? 'план перевыполнен' : pct < 0 ? 'план не выполнен' : 'ровно по плану'}</span>`
+      : '<span style="opacity:.4;font-size:11px">введите оклад для расчёта</span>'}
+  `;
+}
+
+// ── SUBMIT ────────────────────────────────────────────────
+async function submitSale() {
+  const employee = document.getElementById('emp-sel').value;
+  const amount   = parseFloat(document.getElementById('f-amount').value);
+  const salary   = parseFloat(document.getElementById('f-salary').value) || 0;
+  const date     = document.getElementById('f-date').value;
+  const comment  = document.getElementById('f-comment').value;
+
+  if (!employee)     { toast('Выберите сотрудника', 'err'); return; }
+  if (!amount || amount <= 0) { toast('Введите корректную сумму', 'err'); return; }
+  if (!date)         { toast('Укажите дату', 'err'); return; }
+
+  const btn = document.getElementById('btn-sub');
+  btn.disabled = true; btn.textContent = 'ОТПРАВКА...';
+
+  try {
+    const res = await fetch(CONFIG.APPS_SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action:'addSale', date, employee, amount, salary, comment })
+    });
+    const r = await res.json();
+    if (r.success) {
+      toast('Продажа добавлена ✓', 'ok');
+      salesData.push({ date, employee, amount, salary, comment });
+      updateSummary();
+      renderDashCards(); // обновить карточки
+      document.getElementById('f-amount').value  = '';
+      document.getElementById('f-salary').value  = '';
+      document.getElementById('f-comment').value = '';
+      calcPreview();
+      if (tg) tg.HapticFeedback?.notificationOccurred('success');
+    } else throw new Error(r.error || 'Ошибка сервера');
+  } catch(e) {
+    toast('Ошибка: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = 'ДОБАВИТЬ ПРОДАЖУ';
+  }
+}
+
+// ── UTILS ─────────────────────────────────────────────────
+function switchPage(id, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  btn.classList.add('active');
+  if (id === 'leaderboard') renderLeaderboard();
+}
+
+function toISO(d) { return d.toISOString().slice(0,10); }
+
+function normDate(s) {
+  if (!s) return '';
+  if (s.includes('.')) {
+    const [d,m,y] = s.split('.');
+    return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+  }
+  return s.slice(0,10);
+}
+
+function fmtMoney(n) {
+  if (n >= 1_000_000) return (n/1_000_000).toFixed(1)+'M';
+  if (n >= 1_000)     return Math.round(n/1_000)+'K';
+  return Math.round(n).toString();
+}
+
+function formatDateRu(d) {
+  return d.toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long'});
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toast(msg, type = 'ok') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  setTimeout(() => { t.className = 'toast'; }, 3000);
+}
+</script>
+</body>
+</html>
